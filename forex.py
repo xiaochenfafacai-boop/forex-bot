@@ -14,13 +14,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ==================== 👑 核心权限配置 ====================
-# 🛡️ 您的专属 Telegram 数字 ID 已经完美绑定
 OWNER_ID = 8179896441 
 
-# 存储授权操作人的用户名集合（不带@，全部小写保存）
+# 存储授权操作人的用户名集合
 authorized_operators = set()
 
-# 机器人全局设置：默认语言为中文 'cn' (可选 'cn', 'mm')
+# 机器人全局设置：默认语言为中文 'cn'
 global_settings = {
     "language": "cn"
 }
@@ -28,45 +27,44 @@ global_settings = {
 # ==================== 📊 纯 Python 原生金融数据分析引擎 ====================
 def fetch_real_price(symbol: str) -> float:
     """
-    【纯原生代码】无需任何 API Key，直接从国际大盘接口秒级抓取实时真价格。
-    支持 XAUUSD (黄金), EURUSD (欧元), GBPUSD (英镑) 等标准 MT5 品种。
+    【全新升级版】支持国际黄金 GC=F 以及标准外汇货币对。
+    无需任何 API Key，直接从大盘接口秒级抓取实时真价格。
     """
     symbol = symbol.upper()
     
-    # 转换成国际大盘的标准行情代码：黄金在雅虎里是 XAUUSD=X，欧元是 EURUSD=X
-    ticker = f"{symbol}=X"
+    # 👑 核心纠偏：针对黄金代码进行特殊处理，外汇保持不变
+    if symbol == "XAUUSD" or "XAU" in symbol:
+        ticker = "GC=F"  # 雅虎财经标准的国际黄金实时行情代码
+    else:
+        ticker = f"{symbol}=X"
+        
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
     
     try:
-        # 假装是浏览器请求，防止被金融数据中心拦截
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
         response = requests.get(url, headers=headers, timeout=10)
         data = response.json()
         
-        # 精准解析最新的一笔真实 Bid 报价
+        # 精准解析最新的一笔真实报价
         real_price = data['chart']['result'][0]['meta']['regularMarketPrice']
-        logger.info(f"成功获取 MT5 大盘最新真实报价 -> {symbol}: {real_price}")
+        logger.info(f"成功获取大盘最新真实报价 -> {symbol} (Ticker: {ticker}): {real_price}")
         return float(real_price)
         
     except Exception as e:
-        logger.error(f"获取真实价格失败: {e}，将启用保底模拟价格。")
-        # 如果网络偶尔抖动失败，用一个相对合理的数字保底，防止程序崩溃
-        return 2345.50 if symbol == "XAUUSD" else 1.0850
+        logger.error(f"获取真实价格失败: {e}，将启用保底价格。")
+        return 2345.50 if "XAU" in symbol else 1.0850
 
 def fetch_and_analyze(symbol: str):
     """
     高精度策略计算引擎：利用上面抓到的实时真实价格，动态计算关键点位和喊单计划。
     """
     symbol = symbol.upper()
-    
-    # 👑 核心改进：这里获取的绝对是紧跟 MT5 盘口的实时真实价格！
     current_price = fetch_real_price(symbol)
     
-    # 根据实时价格，动态计算阻力位与支撑位（不再是固定死数据）
-    # 这里的加减系数你可以根据自己的技术指标策略随时进行数学公式修改
-    if "XAU" in symbol:  # 如果是黄金，点位波动大
+    # 根据实时价格，动态计算阻力位与支撑位
+    if "XAU" in symbol:  # 如果是黄金
         res1_val = current_price + 14.50
         res2_val = current_price + 29.50
         sup1_val = current_price - 10.50
@@ -76,7 +74,7 @@ def fetch_and_analyze(symbol: str):
         sl_val = current_price - 14.50
         tp_val = current_price + 12.50
         price_format = "{:.2f}"
-    else:  # 如果是外汇货币对（如 EURUSD），点位波动小
+    else:  # 如果是外汇货币对
         res1_val = current_price + 0.0035
         res2_val = current_price + 0.0070
         sup1_val = current_price - 0.0025
@@ -109,7 +107,6 @@ def fetch_and_analyze(symbol: str):
 # ==================== 🌐 多语言模板渲染引擎 ====================
 def generate_report_text(data: dict, lang: str) -> str:
     if lang == "mm":
-        # 🇲🇲 缅文深度报告模板
         return (
             f"🤖 **{data['symbol']} Real-time Trade Strategy**\n"
             f"📅 **အချိန်:** {data['time']} (GMT+8)\n"
@@ -131,7 +128,6 @@ def generate_report_text(data: dict, lang: str) -> str:
             f"• Risk/Reward Ratio: 1 : 1.8"
         )
     else:
-        # 🇨🇳 中文深度报告模板 (默认)
         return (
             f"🤖 **{data['symbol']} 实时深度策略报告**\n"
             f"📅 **时间：** {data['time']} (GMT+8)\n"
@@ -213,7 +209,6 @@ async def handle_chinese_commands(update: Update, context: ContextTypes.DEFAULT_
         
         await update.message.reply_text(f"🔄 正在为您抓取 MT5 实时盘口，并高精度计算【{symbol}】的实时进出场数据，请稍后...")
         
-        # 异步调用计算逻辑
         analysis_data = fetch_and_analyze(symbol)
         report_text = generate_report_text(analysis_data, global_settings["language"])
         
@@ -246,7 +241,6 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
-    # 强制在当前线程中设置并创建一个干净的异步事件循环，完美适配 Python 3.14+
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
