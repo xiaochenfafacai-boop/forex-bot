@@ -46,13 +46,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"💰 **当前实时金价:** {global_data['last_price']}\n📊 分析: 建议操作请关注趋势。")
 
 def main():
+    # 使用 ApplicationBuilder 显式启用 JobQueue
     app = Application.builder().token(os.environ.get("TELEGRAM_BOT_TOKEN")).build()
     
-    # 添加定时任务
+    # 手动添加 JobQueue (如果上面的 build 没有自动创建的话)
     job_queue = app.job_queue
+    
+    # 添加定时任务 (每60秒运行一次)
     job_queue.run_repeating(update_price_job, interval=60, first=1)
     
+    # 添加处理器
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
+    
+    # 启动
     app.run_polling()
 
 if __name__ == "__main__":
