@@ -1,44 +1,39 @@
 import os
 import logging
-import json
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import requests
+import asyncio
 from telegram import Update
-from telegram.ext import Application, MessageHandler, filters, ContextTypes, CommandHandler
+from telegram.ext import Application, MessageHandler, filters, ContextTypes, JobQueue
 
 # 基础配置
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# 全局数据存储
+# 全局数据
 global_data = {
-    "last_price": "连接中...",
+    "last_price": "正在获取中...",
     "owner_id": 8178986441,
-    "authorized_operators": set(),
-    "settings": {"language": "cn"}
+    "authorized_operators": set()
 }
 
-# 1. 接收 MT5 价格的 Web 服务器
-class MT5DataReceiver(BaseHTTPRequestHandler):
-    def do_POST(self):
-        content_length = int(self.headers['Content-Length'])
-        post_data = self.rfile.read(content_length).decode('utf-8')
-        try:
-            data = json.loads(post_data)
-            if "price" in data:
-                global_data["last_price"] = str(data["price"])
-                self.send_response(200)
-                self.end_headers()
-                self.wfile.write(b'{"status":"ok"}')
-        except Exception:
-            self.send_error(400)
+# 获取实时黄金价格的函数 (无需 MT5)
+def get_gold_price():
+    try:
+        # 使用公共的 API 获取金价 (例如使用 Yahoo Finance 或类似的公开源)
+        # 这里以一个示例接口为例，你可以搜索 "gold price api" 替换为你需要的源
+        response = requests.get("https://api.metals.live/v1/spot/gold")
+        data = response.json()
+        price = data[0]['price']
+        return f"{price:.2f}"
+    except Exception as e:
+        logger.error(f"获取金价失败: {e}")
+        return "获取失败"
 
-def run_server():
-    port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(('0.0.0.0', port), MT5DataReceiver)
-    server.serve_forever()
+# 定时任务：每分钟自动更新一次价格
+async def update_price_job(context: ContextTypes.DEFAULT_TYPE):
+    global_data["last_price"] = get_gold_price()
 
-# 2. Telegram 指令逻辑
+# Telegram 处理逻辑
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text
@@ -47,34 +42,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id != global_data["owner_id"] and user_id not in global_data["authorized_operators"]:
         return
 
-    # 报价与分析
-    if "查看" in text or "price" in text.lower():
-        await update.message.reply_text(f"💰 实时报价: {global_data['last_price']}\n📊 分析: 建议操作请参考实时趋势。")
-    
-    # 设置语言
-    elif text.startswith("/lang "):
-        lang = text.split(" ")[1]
-        global_data["settings"]["language"] = lang
-        await update.message.reply_text(f"Language set to {lang}")
-
-    # 管理操作人
-    elif text.startswith("/add "):
-        new_op = int(text.split(" ")[1])
-        global_data["authorized_operators"].add(new_op)
-        await update.message.reply_text(f"已授权操作人: {new_op}")
-        
-    elif text.startswith("/remove "):
-        rem_op = int(text.split(" ")[1])
-        if rem_op in global_data["authorized_operators"]:
-            global_data["authorized_operators"].remove(rem_op)
-            await update.message.reply_text(f"已移除操作人: {rem_op}")
+    if "查看" in text:
+        await update.message.reply_text(f"💰 **当前实时金价:** {global_data['last_price']}\n📊 分析: 建议操作请关注趋势。")
 
 def main():
-    # 启动价格接收后台
-    threading.Thread(target=run_server, daemon=True).start()
-    
-    # 启动 Telegram Bot
     app = Application.builder().token(os.environ.get("TELEGRAM_BOT_TOKEN")).build()
+    
+    # 添加定时任务
+    job_queue = app.job_queue
+    job_queue.run_repeating(update_price_job, interval=60, first=1)
+    
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
     app.run_polling()
 
