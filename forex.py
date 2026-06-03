@@ -207,5 +207,22 @@ def main():
     # 在 Render Background Worker 上保持持续轮询监听
     app.run_polling()
 
+# 1. 首先确保你在 forex.py 的文件最顶部已经导入了 asyncio 库：
+# import asyncio
+
+# 2. 将原来的 main() 函数稍作修改，或者直接用下面这个启动入口彻底解决循环问题：
 if __name__ == "__main__":
-    main()
+    import asyncio
+    
+    # 强制在当前线程中设置并创建一个干净的异步事件循环
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+    # 使用 Python 官方推荐的安全方式运行机器人
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
